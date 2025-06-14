@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Kinesis Producer",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"src/producer/kinesis_producer.py"
+			],
+			"group": "none",
+			"presentation": {
+				"reveal": "always",
+				"panel": "new"
+			},
+			"problemMatcher": []
+		}
+	]
+}
