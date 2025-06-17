@@ -11,8 +11,33 @@
 # COMMAND ----------
 
 import os
-from pyspark.sql.functions import *
-from pyspark.sql.types import *
+from dotenv import load_dotenv
+import boto3
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, from_json, window, avg, count
+from pyspark.sql.types import StructType, StructField, StringType, DoubleType, TimestampType
+
+# Load environment variables
+load_dotenv()
+
+# Initialize Spark Session with AWS configurations
+spark = SparkSession.builder \
+    .appName("KinesisStreamConsumer") \
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+    .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider") \
+    .config("spark.hadoop.fs.s3a.access.key", os.getenv('AWS_ACCESS_KEY_ID')) \
+    .config("spark.hadoop.fs.s3a.secret.key", os.getenv('AWS_SECRET_ACCESS_KEY')) \
+    .getOrCreate()
+
+# Set up AWS credentials for boto3
+boto3.setup_default_session(
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    region_name=os.getenv('AWS_REGION')
+)
+
+# Load environment variables
+load_dotenv()
 
 # Define the schema for the incoming data
 schema = StructType([
@@ -25,19 +50,34 @@ schema = StructType([
 
 # COMMAND ----------
 
-# Configure AWS credentials
-spark.conf.set("spark.hadoop.fs.s3a.access.key", dbutils.secrets.get(scope="aws", key="access_key"))
-spark.conf.set("spark.hadoop.fs.s3a.secret.key", dbutils.secrets.get(scope="aws", key="secret_key"))
-spark.conf.set("spark.hadoop.fs.s3a.endpoint", f"s3.{os.getenv('AWS_REGION')}.amazonaws.com")
+# Get AWS configuration from environment
+aws_region = os.getenv('AWS_REGION')
+if not aws_region:
+    raise ValueError("AWS_REGION environment variable is not set")
+
+# Configure AWS endpoints and regions
+spark.conf.set("spark.hadoop.fs.s3a.endpoint", f"s3.{aws_region}.amazonaws.com")
+spark.conf.set("spark.kinesis.client.region", aws_region)
+
+# Additional Kinesis-specific configurations
+spark.conf.set("spark.kinesis.client.maxRecords", "1000")
+spark.conf.set("spark.kinesis.client.numRetries", "3")
+spark.conf.set("spark.kinesis.client.retryIntervalMs", "1000")
 
 # COMMAND ----------
 
 # Read from Kinesis Stream
+kinesis_stream_name = os.getenv('KINESIS_STREAM_NAME')
+if not kinesis_stream_name:
+    raise ValueError("KINESIS_STREAM_NAME environment variable is not set")
+
 kinesis_stream = spark.readStream \
     .format("kinesis") \
-    .option("streamName", os.getenv("KINESIS_STREAM_NAME")) \
+    .option("streamName", kinesis_stream_name) \
     .option("initialPosition", "earliest") \
-    .option("region", os.getenv("AWS_REGION")) \
+    .option("region", aws_region) \
+    .option("awsAccessKeyId", os.getenv('AWS_ACCESS_KEY_ID')) \
+    .option("awsSecretKey", os.getenv('AWS_SECRET_ACCESS_KEY')) \
     .load()
 
 # Parse the JSON data
@@ -64,11 +104,34 @@ windowed_stream = parsed_stream \
 # COMMAND ----------
 
 # Write the stream to Delta table
-query = windowed_stream.writeStream \
+delta_query = windowed_stream.writeStream \
     .format("delta") \
     .outputMode("append") \
     .option("checkpointLocation", "/tmp/kinesis_checkpoint") \
     .table("sensor_metrics")
+
+# COMMAND ----------
+
+# Display raw sensor data in console
+raw_console_query = parsed_stream.writeStream \
+    .outputMode("append") \
+    .format("console") \
+    .option("truncate", False) \
+    .trigger(processingTime="5 seconds") \
+    .start()
+
+# Display windowed aggregations in console
+agg_console_query = windowed_stream.writeStream \
+    .outputMode("complete") \
+    .format("console") \
+    .option("truncate", False) \
+    .trigger(processingTime="5 seconds") \
+    .start()
+
+# Wait for the queries to terminate
+raw_console_query.awaitTermination()
+agg_console_query.awaitTermination()
+delta_query.awaitTermination()
 
 # COMMAND ----------
 
