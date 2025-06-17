@@ -16,6 +16,9 @@ This project demonstrates a real-time data processing pipeline using Amazon Kine
 ├── requirements.txt
 └── README.md
 ```
+<img width="955" alt="image" src="https://github.com/user-attachments/assets/8a562388-e79e-4a71-8cee-7a29cdd0fce4" />
+<img width="955" alt="image" src="https://github.com/user-attachments/assets/8a562388-e79e-4a71-8cee-7a29cdd0fce4" />
+
 
 ## Prerequisites
 
