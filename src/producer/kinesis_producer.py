@@ -22,7 +22,7 @@ class KinesisProducer:
     def generate_sample_data(self):
         """Generate sample IoT sensor data"""
         return {
-            'device_id': f'device_{random.randint(1, 100)}',
+            'device_id': f'device_{random.randint(1, 5)}',
             'temperature': round(random.uniform(20.0, 30.0), 2),
             'humidity': round(random.uniform(30.0, 70.0), 2),
             'pressure': round(random.uniform(980.0, 1020.0), 2),
